@@ -6,7 +6,7 @@ class cnn(nn.Module):
     def __init__(self, in_channel, conditioned_DNI, num_classes):
         super(cnn, self).__init__()
 
-               
+
         self.layer1 = nn.Sequential(
             nn.Conv2d(in_channel, 16, kernel_size=5, padding=2),
             nn.BatchNorm2d(16),
@@ -25,12 +25,12 @@ class cnn(nn.Module):
         self._fc = dni_linear(num_classes, num_classes, conditioned=conditioned_DNI)
 
         self.cnn = nn.Sequential(
-                   self.layer1, 
-                   self.layer2, 
+                   self.layer1,
+                   self.layer2,
                    self.fc)
         self.dni = nn.Sequential(
-                   self._layer1, 
-                   self._layer2, 
+                   self._layer1,
+                   self._layer2,
                    self._fc)
         self.optimizers = []
         self.forwards = []
@@ -53,18 +53,18 @@ class cnn(nn.Module):
         out = self.layer1(x)
         grad = self._layer1(out, y)
         return out, grad
- 
+
     def forward_layer2(self, x, y=None):
         out = self.layer2(x)
         grad = self._layer2(out, y)
         return out, grad
-    
+
     def forward_fc(self, x, y=None):
         x = x.view(x.size(0), -1)
         out = self.fc(x)
         grad = self._fc(out, y)
         return out, grad
-    
+
     def forward(self, x, y=None):
         layer1 = self.layer1(x)
         layer2 = self.layer2(layer1)
@@ -77,15 +77,22 @@ class cnn(nn.Module):
             return (layer1, layer2, fc), (grad_layer1, grad_layer2, grad_fc)
         else:
             return layer1, layer2, fc
-        
+
 # Neural Network Model (1 hidden layer)
 class mlp(nn.Module):
-    def __init__(self, conditioned_DNI, input_size, num_classes, hidden_size=256):
+    def __init__(self, conditioned_DNI, input_size, num_classes, lr=3e-5, hidden_size=256):
         super(mlp, self).__init__()
+
+        # params
+        self.input_size = input_size
+        self.num_classes = num_classes
+        self.lr = lr
+        self.hidden_size = hidden_size
+
         # classify network
-        self.fc1 = nn.Linear(input_size, hidden_size) 
+        self.fc1 = nn.Linear(input_size, hidden_size)
         self.relu = nn.ReLU()
-        self.fc2 = nn.Linear(hidden_size, num_classes)  
+        self.fc2 = nn.Linear(hidden_size, num_classes)
         # dni network
         self._fc1 = dni_linear(hidden_size, num_classes, conditioned=conditioned_DNI)
         self._fc2 = dni_linear(num_classes, num_classes, conditioned=conditioned_DNI)
@@ -96,8 +103,9 @@ class mlp(nn.Module):
         self.forwards = []
         self.init_optimzers()
         self.init_forwards()
-        
-    def init_optimzers(self, learning_rate=3e-5):
+
+    def init_optimzers(self):
+        learning_rate = self.lr
         self.optimizers.append(torch.optim.Adam(self.fc1.parameters(), lr=learning_rate))
         self.optimizers.append(torch.optim.Adam(self.fc2.parameters(), lr=learning_rate))
         self.optimizer = torch.optim.Adam(self.mlp.parameters(), lr=learning_rate)
@@ -108,23 +116,23 @@ class mlp(nn.Module):
         self.forwards.append(self.forward_fc2)
 
     def forward_fc1(self, x, y=None):
-        x = x.view(-1, 28*28)
+        x = x.view(-1, self.input_size)
         out = self.fc1(x)
         grad = self._fc1(out, y)
         return out, grad
-       
+
     def forward_fc2(self, x, y=None):
         x = self.relu(x)
         out = self.fc2(x)
         grad = self._fc2(out, y)
         return out, grad
- 
+
     def forward(self, x, y=None):
         x = x.view(-1, 28*28)
         fc1 = self.fc1(x)
         relu1 = self.relu(fc1)
         fc2 = self.fc2(relu1)
-        
+
         if y is not None:
             grad_fc1 = self._fc1(fc1, y)
             grad_fc2 = self._fc2(fc2, y)

@@ -14,7 +14,7 @@ class classifier():
         self.num_classes = data.num_classes
         assert args.model_type == 'mlp' or args.model_type == 'cnn'
         if args.model_type == 'mlp':
-            self.net = mlp(args.conditioned, data.input_dims, data.num_classes, hidden_size=256)
+            self.net = mlp(args.conditioned, data.input_dims, data.num_classes, args.lr, hidden_size=256)
         elif args.model_type == 'cnn':
             self.net = cnn(data.in_channel, args.conditioned, data.num_classes)
 
