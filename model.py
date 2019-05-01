@@ -1,5 +1,6 @@
 import torch.nn as nn
 from dni import *
+import itertools
 
 # CNN Model (2 conv layer)
 class cnn(nn.Module):
@@ -96,11 +97,16 @@ class mlp(nn.Module):
         # dni network
         self._fc1 = dni_linear(hidden_size, num_classes, conditioned=conditioned_DNI)
         self._fc2 = dni_linear(num_classes, num_classes, conditioned=conditioned_DNI)
+        # m weights
+        params = itertools.chain(self.fc1.parameters(), self.fc2.parameters())
+        self.m_mu = [torch.nn.Parameter(torch.zeros_like(w)) for w in params]
+        self.m_rho = [torch.nn.Parameter(torch.log(torch.ones_like(w).exp()-1)) for w in params]
 
         self.mlp = nn.Sequential(self.fc1, self.relu, self.fc2)
         self.dni = nn.Sequential(self._fc1, self._fc2)
         self.optimizers = []
         self.forwards = []
+        self.m_list = []
         self.init_optimzers()
         self.init_forwards()
 
@@ -110,6 +116,7 @@ class mlp(nn.Module):
         self.optimizers.append(torch.optim.Adam(self.fc2.parameters(), lr=learning_rate))
         self.optimizer = torch.optim.Adam(self.mlp.parameters(), lr=learning_rate)
         self.grad_optimizer = torch.optim.Adam(self.dni.parameters(), lr=learning_rate)
+        self.m_optimizer = torch.optim.Adam(itertools.chain(self.m_mu, self.m_rho), lr=learning_rate)
 
     def init_forwards(self):
         self.forwards.append(self.forward_fc1)
