@@ -42,7 +42,7 @@ class classifier():
     def save_grad(self, name):
         def hook(grad):
             self.backprop_grads[name] = grad
-            self.backprop_grads[name].volatile = False
+            #self.backprop_grads[name].volatile = False
         return hook
 
     def optimizer_dni_module(self, images, labels, label_onehot, grad_optimizer, optimizer, forward):
@@ -74,10 +74,10 @@ class classifier():
 
     def train_model(self):
         for epoch in range(self.num_epochs):
-            for i, (images, labels) in enumerate(self.train_loader):  
+            for i, (images, labels) in enumerate(self.train_loader):
                 # Convert torch tensor to Variable
                 labels_onehot = torch.zeros([labels.size(0), self.num_classes])
-                labels_onehot.scatter_(1, labels.unsqueeze(1), 1)  
+                labels_onehot.scatter_(1, labels.unsqueeze(1), 1)
                 images = Variable(images).cuda()
                 labels = Variable(labels).cuda()
                 labels_onehot = Variable(labels_onehot).cuda()
@@ -90,15 +90,15 @@ class classifier():
                         out = self.optimizer_module(optimizer, forward, out)
                 # synthetic model
                 # Forward + Backward + Optimize
-                loss, grad_loss = self.optimizer_dni_module(images, labels, labels_onehot, 
+                loss, grad_loss = self.optimizer_dni_module(images, labels, labels_onehot,
                                           self.net.grad_optimizer, self.net.optimizer, self.net)
-                
+
                 if (i+1) % 100 == 0:
-                    print ('Epoch [%d/%d], Step [%d/%d], Loss: %.4f, Grad Loss: %.4f' 
+                    print ('Epoch [%d/%d], Step [%d/%d], Loss: %.4f, Grad Loss: %.4f'
                          %(epoch+1, self.num_epochs, i+1, self.num_train//self.batch_size, loss.data[0], grad_loss.data[0]))
 
             if (epoch+1) % 10 == 0:
-                perf = self.test_model(epoch+1)    
+                perf = self.test_model(epoch+1)
                 if perf > self.best_perf:
                     torch.save(self.net.state_dict(), self.model_name+'_model_best.pkl')
                     self.net.train()
@@ -125,5 +125,5 @@ class classifier():
         print('Epoch %d: Accuracy of the network on the 10000 test images: %d %%' % (epoch, perf))
         return perf
 
-        
+
 

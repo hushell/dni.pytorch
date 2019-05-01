@@ -2,11 +2,12 @@ import argparse
 from train import *
 import torch
 from dataset import *
+import os
 
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='DNI')
-    parser.add_argument('--dataset', choices=['mnist', 'cifar10'], default='cifar10')
+    parser.add_argument('--dataset', choices=['mnist', 'cifar10'], default='mnist')
     parser.add_argument('--num_epochs', type=int, default=300)
     parser.add_argument('--model_type', choices=['mlp', 'cnn'], default='cnn',
                     help='currently support mlp and cnn')
@@ -14,10 +15,15 @@ if __name__ == '__main__':
     parser.add_argument('--conditioned', type=bool, default=False)
     parser.add_argument('--plot', type=bool, default=False)
     parser.add_argument('--use_gpu', type=bool, default=True)
+    parser.add_argument('--gpu_id', type=int, default=3)
 
     args = parser.parse_args()
+
+    os.environ['CUDA_VISIBLE_DEVICES'] = str(args.gpu_id)
+
     # do not support using mlp to trian cifar
     assert args.dataset != 'cifar10' or args.model_type != 'mlp'
+
     model_name = '%s.%s_dni'%(args.dataset, args.model_type, )
     if args.conditioned:
         model_name += '.conditioned'
