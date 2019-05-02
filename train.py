@@ -59,7 +59,7 @@ class classifier():
             keys.append(str(i))
         outputs = outs[-1]
         loss = self.classificationCriterion(outputs, labels)
-        loss.backward(retain_variables=True)
+        loss.backward(retain_graph=True)
         for (k, v) in handles.items():
             v.remove()
         grad_loss = 0.

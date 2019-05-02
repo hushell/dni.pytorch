@@ -135,7 +135,7 @@ class mlp(nn.Module):
         return out, grad
 
     def forward(self, x, y=None):
-        x = x.view(-1, 28*28)
+        x = x.view(-1, self.input_size)
         fc1 = self.fc1(x)
         relu1 = self.relu(fc1)
         fc2 = self.fc2(relu1)
