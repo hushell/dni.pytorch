@@ -1,6 +1,8 @@
 import torch.nn as nn
+import torch.nn.Parameter as Parameter
 from dni import *
 import itertools
+from functional_networks import mnist_mlp_dni
 
 # CNN Model (2 conv layer)
 class cnn(nn.Module):
@@ -146,3 +148,53 @@ class mlp(nn.Module):
             return (fc1, fc2), (grad_fc1, grad_fc2)
         else:
             return fc1, fc2
+
+
+class rdbnn(nn.Module):
+    def __init__(self, input_dim=1, input_size=28*28, device='cpu', do_bn=False,
+              n_hidden=400, n_classes=10, lr=3e-5, conditioned_DNI=True, n_inner=3):
+        super(rdbnn, self).__init__()
+
+        # params
+        self.input_dim = input_dim
+        self.input_size = input_size
+        self.num_classes = num_classes
+        self.lr = lr
+        self.n_hidden = n_hidden
+        self.n_classes = n_classes
+        self.n_inner = n_inner
+
+        # classify network
+        f, flat_params, flat_stats, dni = mnist_mlp_dni(
+                input_dim=input_dim, input_size=input_size, device=device, do_bn=do_bn,
+                n_hidden=n_hidden, n_classes=n_classes, dni_class=dni_linear, conditioned_DNI)
+        self.f = f
+        self.theta = flat_params
+        self.bn_stats = flat_stats
+        self.dni = dni
+
+        # m params of Gaussian
+        self.m_mu = {k:Parameter(torch.zeros_like(w)).requires_grad_()
+                        for k,w in flat_params.items()}
+        self.m_rho = {k:Parameter(torch.log(torch.ones_like(w).exp()-1)).requires_grad_()
+                        for k,w in flat_params.items()}
+        for k in flat_params.keys():
+            self.register_parameter(k + '_mu', self.m_mu[k])
+            self.register_parameter(k + '_rho', self.m_rho[k])
+
+        # optimizers
+        self.theta_optimizer = torch.optim.Adam(self.theta.values(), lr=self.lr)
+        self.grad_optimizer = torch.optim.Adam(self.dni.values(), lr=self.lr)
+        self.m_optimizer = torch.optim.Adam(itertools.chain(self.m_mu.values(), self.m_rho.values()), lr=self.lr)
+
+    def forward(self, x, y=None, training=True):
+        theta = {k:v.detach().requires_grad_() for k,v in theta.items()}
+
+        for t in range(self.n_inner):
+            logit, grads = self.f(x, theta, self.bn_stats, training, dni=self.dni, label=y)
+            for k, grad in grads.items():
+                theta[k] =
+
+        return logit, grads
+
+
