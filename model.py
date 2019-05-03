@@ -187,6 +187,7 @@ class rdbnn(nn.Module):
         self.grad_optimizer = torch.optim.Adam(self.dni.values(), lr=self.lr)
         self.m_optimizer = torch.optim.Adam(itertools.chain(self.m_mu.values(), self.m_rho.values()), lr=self.lr)
 
+
     def forward(self, x, y=None, training=True):
         theta = {k:v.detach().requires_grad_() for k,v in theta.items()}
 
