@@ -1,6 +1,5 @@
 import torch.nn.functional as F
-from .utils import conv_params, linear_params, bnparams, bnstats, \
-        flatten_params, flatten_stats, batch_norm
+from .utils import conv_params, linear_params, bnparams, bnstats, batch_norm
 
 
 class MNIST_MLP_DNI:
@@ -17,13 +16,20 @@ class MNIST_MLP_DNI:
 
         def gen_params():
             params = {
-                'fc1': linear_params(input_dim*input_size, n_hidden),
-                'fc2': linear_params(n_hidden, n_hidden),
-                'fc3': linear_params(n_hidden, n_classes)}
-            if do_bn:
-                params.update({'bn1': bnparams(n_hidden),
-                               'bn2': bnparams(n_hidden)})
+                'fc1': linear_params(input_dim*input_size, n_hidden, device),
+                'fc2': linear_params(n_hidden, n_hidden, device),
+                'fc3': linear_params(n_hidden, n_classes, device)}
             return params
+
+        def gen_bn_params():
+            params = {'fc1': bnparams(n_hidden, device),
+                      'fc2': bnparams(n_hidden, device)}
+            return params
+
+        def gen_bn_stats():
+            stats = {'fc1': bnstats(n_hidden, device),
+                     'fc2': bnstats(n_hidden, device)}
+            return stats
 
         def gen_dni():
             dni = {
@@ -32,63 +38,60 @@ class MNIST_MLP_DNI:
                 'fc3': dni_class(n_classes, n_classes, conditioned=conditioned_DNI).to(device)}
             return dni
 
-        def gen_stats():
-            stats = {}
-            if do_bn:
-                stats.update({'bn1': bnstats(n_hidden),
-                              'bn2': bnstats(n_hidden)})
-            return stats
-
-        self.params = flatten_params(gen_params(), device)
-        self.stats = flatten_stats(gen_stats(), device)
+        # All params
+        self.params = gen_params()
+        if do_bn:
+            self.bn_params = gen_bn_params()
+            self.bn_stats = gen_bn_stats()
         self.dni = gen_dni()
 
-        # forwards
-        self.forwards = []
-        self.forwards.append(self.f_fc1)
-        self.forwards.append(self.f_fc2)
-        self.forwards.append(self.f_fc3)
-
-    def f_fc1(self, input, label=None, training=True):
-        fc1 = F.relu(F.linear(input, self.params['fc1.weight'], self.params['fc1.bias']))
+    def parameters(self):
+        for layer in self.params.values():
+            for w in layer.values():
+                yield w
         if self.do_bn:
-            fc1 = batch_norm(fc1, self.params, self.stats, 'bn1', training)
+            for layer in self.bn_params.values():
+                for w in layer.values():
+                    yield w
+
+    def dni_parameters(self):
+        for layer in self.dni.values():
+            for w in layer.values():
+                yield w
+
+    def init_theta(self, key):
+        #return {k:v.detach().requires_grad_() for k,v in self.params[key].items()}
+        #return {k:v.clone() for k,v in self.params[key].items()}
+        return self.params[key]
+
+    def f_fc(self, input, theta, key, activation=F.relu, label=None, training=True):
+        # linear
+        fc = F.linear(input, theta['weight'], theta['bias'])
+
+        # dni
         if label is not None:
-            grad = dni['fc1'](fc1, label) # d_loss/d_fc1
+            grad = self.dni[key](fc, label) # d_loss/d_fc
         else:
             grad = None
-        return fc1, grad
 
-    def f_fc2(self, input, label, training=True):
-        fc2 = F.relu(F.linear(input, self.params['fc2.weight'], self.params['fc2.bias']))
+        # activation
+        output = fc if activation is None else activation(fc)
+
+        # batchnorm
         if self.do_bn:
-            fc2 = batch_norm(fc2, self.params, self.stats, 'bn2', training)
-        if label is not None:
-            grad = dni['fc2'](fc2, label) # d_loss/d_fc2
-        else:
-            grad = None
-        return fc2, grad
+            output = batch_norm(output, self.bn_params, self.bn_stats, key, training)
 
-    def f_fc3(self, input, label, training=True):
-        fc3 = F.linear(input, self.params['fc3.weight'], self.params['fc3.bias'])
-        if label is not None:
-            grad = dni['fc3'](fc3, label) # d_loss/d_fc3
-        else:
-            grad = None
-        return fc3, grad
+        return output, grad
 
-    def f(self, input, params, stats, training=True, dni=None, label=None):
-        do_dni = True if label is not None and dni is not None else False
-
+    def forward(self, input, params, label=None, training=True):
         x = input.view(-1, self.input_dim*self.input_size)
         # fc1
-        fc1, g_fc1 = self.f_fc1(x, label, training)
+        fc1, g_fc1 = self.f_fc(x, params['fc1'], 'fc1', F.relu, label, training)
         # fc2
-        fc2, g_fc2 = self.f_fc2(fc1, label, training)
+        fc2, g_fc2 = self.f_fc(fc1, params['fc2'], 'fc2', F.relu, label, training)
         # fc3
-        fc3, g_fc3 = self.f_fc3(fc2, label, training)
+        fc3, g_fc3 = self.f_fc(fc2, params['fc3'], 'fc3', None, label, training)
         logit = F.log_softmax(fc3, dim=1)
 
         return logit, (g_fc1, g_fc2, g_fc3)
-
 

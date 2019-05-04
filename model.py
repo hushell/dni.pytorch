@@ -3,6 +3,7 @@ import torch.nn.Parameter as Parameter
 from dni import *
 import itertools
 from functional_networks import mnist_mlp_dni
+from nested_dict import nested_dict
 
 # CNN Model (2 conv layer)
 class cnn(nn.Module):
@@ -164,29 +165,57 @@ class rdbnn(nn.Module):
         self.n_classes = n_classes
         self.n_inner = n_inner
 
-        # classify network
-        f, flat_params, flat_stats, dni = mnist_mlp_dni(
+        # functional network
+        self.net = mnist_mlp_dni(
                 input_dim=input_dim, input_size=input_size, device=device, do_bn=do_bn,
                 n_hidden=n_hidden, n_classes=n_classes, dni_class=dni_linear, conditioned_DNI)
-        self.f = f
-        self.theta = flat_params
-        self.bn_stats = flat_stats
-        self.dni = dni
 
-        # m params of Gaussian
-        self.m_mu = {k:Parameter(torch.zeros_like(w)).requires_grad_()
-                        for k,w in flat_params.items()}
-        self.m_rho = {k:Parameter(torch.log(torch.ones_like(w).exp()-1)).requires_grad_()
-                        for k,w in flat_params.items()}
-        for k in flat_params.keys():
-            self.register_parameter(k + '_mu', self.m_mu[k])
-            self.register_parameter(k + '_rho', self.m_rho[k])
+        # m_psi (Gaussian) and intermediate theta
+        # TODO: m to be MLP or ConvNet
+        self.m_mu, self.m_rho, self.inter_theta = {}, {}, {}
+        for l, layer in self.net.params.items():
+            self.m_mu[l] = {}
+            self.m_rho[l] = {}
+            self.inter_theta[l] = {}
+            for k, w in layer.items():
+                self.m_mu[l][k] = Parameter(torch.zeros_like(w, device=device)).requires_grad_()
+                self.m_rho[l][k] = Parameter(torch.log(torch.ones_like(w, device=device).exp()-1)).requires_grad_()
+                self.register_parameter(l+'_'+k, self.m_mu[l][k])
+                self.register_parameter(l+'_'+k, self.m_rho[l][k])
 
         # optimizers
-        self.theta_optimizer = torch.optim.Adam(self.theta.values(), lr=self.lr)
-        self.grad_optimizer = torch.optim.Adam(self.dni.values(), lr=self.lr)
-        self.m_optimizer = torch.optim.Adam(itertools.chain(self.m_mu.values(), self.m_rho.values()), lr=self.lr)
+        self.theta_optimizer = torch.optim.Adam(self.net.parameters(), lr=self.lr)
+        self.grad_optimizer = torch.optim.Adam(self.net.dni_parameters(), lr=self.lr)
+        #self.m_optimizer = torch.optim.Adam(itertools.chain(self.m_mu.values(), self.m_rho.values()), lr=self.lr)
+        self.m_optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
 
+    def refine_theta(self, key, input, activation, label_onehot=None):
+        '''
+        The graph starts with theta = net.params[key]
+        (note that '=' will also copy .grad, so zero_grad() should be called).
+        theta is refined by GD with approximate gradients from DNI,
+        where input is detached from previous activation.
+        Finally, theta will be used in self.net.forward(theta, input)
+        '''
+        self.theta_optimizer.zero_grad()
+        theta = self.net.init_theta(key) # {weight, bias} for a fc
+
+        for t in range(self.n_inner):
+            out, grad = self.net.f_fc(input, theta, key, activation, label=label_onehot, training=True)
+            out.backward(grad, create_graph=True, retain_graph=True) # TODO: try grad.detach() or freeze dni?
+
+            # loss m
+            loss_m = neg_log_m(theta)
+            loss_m.backward(create_graph=True, retain_graph=True)
+
+            # GD
+            for k, w in theta.items():
+                assert(w.grad in not None)
+                theta[k] = w - self.lr * w.grad # TODO: try diff lr
+
+        self.inter_theta[key] = theta
+
+        return out.detach()
 
     def forward(self, x, y=None, training=True):
         theta = {k:v.detach().requires_grad_() for k,v in theta.items()}
@@ -197,5 +226,16 @@ class rdbnn(nn.Module):
                 theta[k] =
 
         return logit, grads
+
+    def neg_log_m(self, theta, key):
+        c = - float(0.5 * math.log(2 * math.pi))
+        std_w = (1 + self.m_rho[key]['weight'].exp()).log() # TODO: need to make std larger?
+        logvar_w = std_w.pow(2).log()
+        logpdf_w = c - 0.5 * logvar_w -
+            (theta['weight'] - self.m_mu[key]['weight']).pow(2) / (2 * std_w.pow(2))
+        std_b = (1 + self.m_rho[key]['bias'].exp()).log()
+        logvar_b = std_b.pow(2).log()
+        logpdf_b = c - 0.5 * logvar_b -
+            (theta['bias'] - self.m_mu[key]['bias']).pow(2) / (2 * std_b.pow(2))
 
 

@@ -20,23 +20,26 @@ def cast(params, dtype='float', device='cpu'):
         return getattr(params, dtype)().to(device)
 
 
-def conv_params(ni, no, k=1):
-    w = torch.Tensor(no, ni, k, k)
-    return kaiming_normal_(w, mode='fan_out', nonlinearity='relu')
-
-
-def linear_params(ni, no):
-    w = torch.Tensor(no, ni)
+def conv_params(ni, no, k=1, device='cpu'):
+    w = torch.Tensor(no, ni, k, k).to(device).requires_grad_()
     return {'weight': kaiming_normal_(w, mode='fan_out', nonlinearity='relu'),
-            'bias': torch.zeros(no)}
+            'bias': None}
 
 
-def bnparams(n):
-    return {'weight': torch.rand(n), 'bias': torch.zeros(n)}
+def linear_params(ni, no, device='cpu'):
+    w = torch.Tensor(no, ni).to(device).requires_grad_()
+    return {'weight': kaiming_normal_(w, mode='fan_out', nonlinearity='relu'),
+            'bias': torch.zeros(no).to(device).requires_grad_()}
 
 
-def bnstats(n):
-    return {'running_mean': torch.zeros(n), 'running_var': torch.ones(n)}
+def bnparams(n, device='cpu'):
+    return {'weight': torch.rand(n).to(device).requires_grad_(),
+            'bias': torch.zeros(n).to(device).requires_grad_()}
+
+
+def bnstats(n, device='cpu'):
+    return {'running_mean': torch.zeros(n).to(device),
+            'running_var': torch.ones(n).to(device)}
 
 
 def flatten_params(params, device='cpu'):
@@ -50,10 +53,10 @@ def flatten_stats(stats, device='cpu'):
 
 
 def batch_norm(x, params, stats, base, mode):
-    return F.batch_norm(x, weight=params[base + '.weight'],
-                        bias=params[base + '.bias'],
-                        running_mean=stats[base + '.running_mean'],
-                        running_var=stats[base + '.running_var'],
+    return F.batch_norm(x, weight=params[base]['weight'],
+                        bias=params[base]['bias'],
+                        running_mean=stats[base]['running_mean'],
+                        running_var=stats[base]['running_var'],
                         training=mode)
 
 
@@ -121,34 +124,6 @@ def create_semisup_sampler(labels, num_classes, num_samples_per_class, do_shuffl
      rep_num = max(1, int(len(labels) / num_classes / num_samples_per_class))
      sampler = MaskedRandomSampler(mask, rep_num, do_shuffle=do_shuffle)
      return sampler
-
-
-#class NormalLogVar(object):
-#    # logvar version
-#    def __init__(self, mu, logvar):
-#        self.mu = mu
-#        self.logvar = logvar
-#        self.shape = mu.size()
-#
-#        super(Normal, self).__init__()
-#
-#    def logpdf(self, x):
-#        c = - float(0.5 * math.log(2 * math.pi))
-#        return c - 0.5 * self.logvar - (x - self.mu).pow(2) / (2 * torch.exp(self.logvar))
-#
-#    def pdf(self, x):
-#        return torch.exp(self.logpdf(x))
-#
-#    def sample(self):
-#        if self.mu.is_cuda:
-#            eps = torch.cuda.FloatTensor(self.shape).normal_()
-#        else:
-#            eps = torch.FloatTensor(self.shape).normal_()
-#        # local reparameterization trick
-#        return self.mu + torch.exp(0.5 * self.logvar) * eps
-#
-#    def entropy(self):
-#        return 0.5 * math.log(2. * math.pi * math.e) + 0.5 * self.logvar
 
 
 class NormalRho(object):
