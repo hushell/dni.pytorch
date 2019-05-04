@@ -19,7 +19,8 @@ class MNIST_MLP_DNI:
                 'fc1': linear_params(input_dim*input_size, n_hidden, device),
                 'fc2': linear_params(n_hidden, n_hidden, device),
                 'fc3': linear_params(n_hidden, n_classes, device)}
-            return params
+            activations = {'fc1': F.relu, 'fc2': F.relu, 'fc3': None}
+            return params, activations
 
         def gen_bn_params():
             params = {'fc1': bnparams(n_hidden, device),
@@ -39,7 +40,7 @@ class MNIST_MLP_DNI:
             return dni
 
         # All params
-        self.params = gen_params()
+        self.params, self.activations = gen_params()
         if do_bn:
             self.bn_params = gen_bn_params()
             self.bn_stats = gen_bn_stats()
@@ -64,7 +65,7 @@ class MNIST_MLP_DNI:
         #return {k:v.clone() for k,v in self.params[key].items()}
         return self.params[key]
 
-    def f_fc(self, input, theta, key, activation=F.relu, label=None, training=True):
+    def f_fc(self, input, theta, key, label=None, training=True):
         # linear
         fc = F.linear(input, theta['weight'], theta['bias'])
 
@@ -75,7 +76,7 @@ class MNIST_MLP_DNI:
             grad = None
 
         # activation
-        output = fc if activation is None else activation(fc)
+        output = fc if self.activations[key] is None else self.activations[key](fc)
 
         # batchnorm
         if self.do_bn:
@@ -84,14 +85,10 @@ class MNIST_MLP_DNI:
         return output, grad
 
     def forward(self, input, params, label=None, training=True):
-        x = input.view(-1, self.input_dim*self.input_size)
-        # fc1
-        fc1, g_fc1 = self.f_fc(x, params['fc1'], 'fc1', F.relu, label, training)
-        # fc2
-        fc2, g_fc2 = self.f_fc(fc1, params['fc2'], 'fc2', F.relu, label, training)
-        # fc3
-        fc3, g_fc3 = self.f_fc(fc2, params['fc3'], 'fc3', None, label, training)
-        logit = F.log_softmax(fc3, dim=1)
+        input = input.view(-1, self.input_dim*self.input_size)
+        for k in self.params.keys():
+            input, _ = self.f_fc(input, params[k], k, label, training)
+        logit = F.log_softmax(input, dim=1)
 
-        return logit, (g_fc1, g_fc2, g_fc3)
+        return logit
 

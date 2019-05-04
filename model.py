@@ -152,11 +152,13 @@ class mlp(nn.Module):
 
 
 class rdbnn(nn.Module):
-    def __init__(self, input_dim=1, input_size=28*28, device='cpu', do_bn=False,
+    def __init__(self, task_loss, beta, input_dim=1, input_size=28*28, device='cpu', do_bn=False,
               n_hidden=400, n_classes=10, lr=3e-5, conditioned_DNI=True, n_inner=3):
         super(rdbnn, self).__init__()
 
         # params
+        self.task_loss = task_loss
+        self.beta = beta
         self.input_dim = input_dim
         self.input_size = input_size
         self.num_classes = num_classes
@@ -164,6 +166,7 @@ class rdbnn(nn.Module):
         self.n_hidden = n_hidden
         self.n_classes = n_classes
         self.n_inner = n_inner
+        self.device = device
 
         # functional network
         self.net = mnist_mlp_dni(
@@ -189,7 +192,7 @@ class rdbnn(nn.Module):
         #self.m_optimizer = torch.optim.Adam(itertools.chain(self.m_mu.values(), self.m_rho.values()), lr=self.lr)
         self.m_optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
 
-    def refine_theta(self, key, input, activation, label_onehot=None):
+    def refine_theta(self, key, input, label_onehot=None):
         '''
         The graph starts with theta = net.params[key]
         (note that '=' will also copy .grad, so zero_grad() should be called).
@@ -201,11 +204,11 @@ class rdbnn(nn.Module):
         theta = self.net.init_theta(key) # {weight, bias} for a fc
 
         for t in range(self.n_inner):
-            out, grad = self.net.f_fc(input, theta, key, activation, label=label_onehot, training=True)
+            out, grad = self.net.f_fc(input, theta, key, label=label_onehot, training=True)
             out.backward(grad, create_graph=True, retain_graph=True) # TODO: try grad.detach() or freeze dni?
 
             # loss m
-            loss_m = neg_log_m(theta)
+            loss_m = self.neg_log_m(theta)
             loss_m.backward(create_graph=True, retain_graph=True)
 
             # GD
@@ -218,14 +221,21 @@ class rdbnn(nn.Module):
         return out.detach()
 
     def forward(self, x, y=None, training=True):
-        theta = {k:v.detach().requires_grad_() for k,v in theta.items()}
+        x, y = x.to(device), y.to(device)
+        y_onehot = torch.zeros([y.size(0), self.n_classes]).to(device)
+        y_onehot.scatter_(1, y.unsqueeze(1), 1)
 
-        for t in range(self.n_inner):
-            logit, grads = self.f(x, theta, self.bn_stats, training, dni=self.dni, label=y)
-            for k, grad in grads.items():
-                theta[k] =
+        # obtain intermediate theta
+        input = x
+        for key in self.net.params.keys():
+            input = self.refine_theta(key, input, label_onehot=None):
 
-        return logit, grads
+        logit = self.net.forward(x, self.inter_theta, label=None, training=True)
+        nll = self.task_loss(logit, y)
+        kl = sum([self.neg_log_m(theta, key) for key, theta in self.inter_theta.items()])
+        loss = nll + self.beta * kl
+
+        return loss, nll, kl
 
     def neg_log_m(self, theta, key):
         c = - float(0.5 * math.log(2 * math.pi))
