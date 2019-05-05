@@ -109,9 +109,7 @@ class MNIST_MLP_DNI:
 
     def update_dni_module(self, x, y, y_onehot,
                           task_loss, optimizer, grad_optimizer):
-        optimizer.zero_grad() # clean theta.grad
-        grad_optimizer.zero_grad()
-
+        # forward with self.params
         logits, grads, fcs = self.forward(self.params, x, y_onehot,
                                           do_grad=True, training=True)
 
@@ -138,8 +136,6 @@ class MNIST_MLP_DNI:
         # dni loss & step
         grad_loss = sum([F.mse_loss(grads[key], real_grads[key].detach())
                          for key in fcs.keys()])
-        grad_loss.backward()
-        grad_optimizer.step()
 
         return loss, grad_loss
 
