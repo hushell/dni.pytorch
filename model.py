@@ -192,7 +192,7 @@ class rdbnn(nn.Module):
         #self.m_optimizer = torch.optim.Adam(itertools.chain(self.m_mu.values(), self.m_rho.values()), lr=self.lr)
         self.m_optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
 
-    def refine_theta(self, key, input, label_onehot=None):
+    def refine_theta(self, key, input, y_onehot):
         '''
         The graph starts with theta = net.params[key]
         (note that '=' will also copy .grad, so zero_grad() should be called).
@@ -204,7 +204,7 @@ class rdbnn(nn.Module):
         theta = self.net.init_theta(key) # {weight, bias} for a fc
 
         for t in range(self.n_inner):
-            out, grad = self.net.f_fc(input, theta, key, label=label_onehot, training=True)
+            out, grad, _ = self.net.f_fc(input, theta, key, label=y_onehot, training=True)
             out.backward(grad, create_graph=True, retain_graph=True) # TODO: try grad.detach() or freeze dni?
 
             # loss m
@@ -228,10 +228,10 @@ class rdbnn(nn.Module):
         # obtain intermediate theta
         input = x
         for key in self.net.params.keys():
-            input = self.refine_theta(key, input, label_onehot=None):
+            input = self.refine_theta(key, input, y_onehot)
 
-        logit = self.net.forward(x, self.inter_theta, label=None, training=True)
-        nll = self.task_loss(logit, y)
+        logits = self.net.forward(x, self.inter_theta, label=None, training=True)
+        nll = self.task_loss(logits, y)
         kl = sum([self.neg_log_m(theta, key) for key, theta in self.inter_theta.items()])
         loss = nll + self.beta * kl
 

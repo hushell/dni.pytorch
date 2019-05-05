@@ -82,13 +82,59 @@ class MNIST_MLP_DNI:
         if self.do_bn:
             output = batch_norm(output, self.bn_params, self.bn_stats, key, training)
 
-        return output, grad
+        return output, grad, fc
 
     def forward(self, input, params, label=None, training=True):
+        self.grads = []
+        self.fcs = []
+
         input = input.view(-1, self.input_dim*self.input_size)
         for k in self.params.keys():
-            input, _ = self.f_fc(input, params[k], k, label, training)
-        logit = F.log_softmax(input, dim=1)
+            input, grad, fc = self.f_fc(input, params[k], k, label, training)
+            self.grads.append(grad)
+            self.fcs.append(fc)
 
-        return logit
+        logits = F.log_softmax(input, dim=1)
+
+        return logits
+
+    def update_dni_module(self, images, labels, label_onehot,
+                          task_loss, optimizer, grad_optimizer):
+        '''
+        synthetic model
+        Forward + Backward + Optimize
+        '''
+        grad_optimizer.zero_grad()
+        optimizer.zero_grad() # clean .grad
+
+        logits = self.forward(images, self.params, label_onehot)
+
+        # register hooks
+        backprop_grads = {}
+        handles = {}
+        keys = []
+
+        def save_grad(name):
+            def hook(grad):
+                backprop_grads[name] = grad
+            return hook
+
+        for i, (fc, grad) in enumerate(zip(self.fcs, self.grads)):
+            handles[str(i)] = fc.register_hook( save_grad(str(i)) )
+            keys.append(str(i))
+
+        # compute real grads
+        loss = task_loss(logits, labels)
+        loss.backward(retain_graph=True) # need 2 backwards
+
+        # remove hooks
+        for (k, v) in handles.items():
+            v.remove()
+
+        grad_loss = sum([F.mse_loss(self.grads[int(k)], backprop_grads[k].detach())
+                         for k in keys])
+        grad_loss.backward()
+        grad_optimizer.step()
+
+        return loss, grad_loss
 
