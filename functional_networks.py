@@ -65,13 +65,16 @@ class MNIST_MLP_DNI:
         #return {k:v.clone() for k,v in self.params[key].items()}
         return self.params[key]
 
-    def f_fc(self, input, theta, key, label=None, training=True):
+    def f_fc(self, key, theta, input, y_onehot=None, do_grad=False, training=True):
+        '''
+        TODO: y_onehot=None and conditioned_DNI = False
+        '''
         # linear
         fc = F.linear(input, theta['weight'], theta['bias'])
 
         # dni
-        if label is not None:
-            grad = self.dni[key](fc, label) # d_loss/d_fc
+        if do_grad:
+            grad = self.dni[key](fc, y_onehot) # d_loss/d_fc
         else:
             grad = None
 
@@ -79,60 +82,62 @@ class MNIST_MLP_DNI:
         output = fc if self.activations[key] is None else self.activations[key](fc)
 
         # batchnorm
-        if self.do_bn:
+        if self.do_bn and self.activations[key] is not None:
             output = batch_norm(output, self.bn_params, self.bn_stats, key, training)
 
         return output, grad, fc
 
-    def forward(self, input, params, label=None, training=True):
-        self.grads = []
-        self.fcs = []
+    def forward(self, params, x, y_onehot=None, do_grad=False, training=True):
+        '''
+        forward without theta refinement
+        '''
+        grads, fcs = {}, {}
 
-        input = input.view(-1, self.input_dim*self.input_size)
-        for k in self.params.keys():
-            input, grad, fc = self.f_fc(input, params[k], k, label, training)
-            self.grads.append(grad)
-            self.fcs.append(fc)
+        input = x.view(-1, self.input_dim*self.input_size)
+
+        for key in self.params.keys():
+            input, grad, fc = self.f_fc(key, params[key], input, y_onehot, do_grad, training)
+            if do_grad:
+                grads[key], fcs[key] = grad, fc
 
         logits = F.log_softmax(input, dim=1)
 
-        return logits
+        if do_grad:
+            return logits, grads, fcs
+        else:
+            return logits
 
-    def update_dni_module(self, images, labels, label_onehot,
+    def update_dni_module(self, x, y, y_onehot,
                           task_loss, optimizer, grad_optimizer):
-        '''
-        synthetic model
-        Forward + Backward + Optimize
-        '''
+        optimizer.zero_grad() # clean theta.grad
         grad_optimizer.zero_grad()
-        optimizer.zero_grad() # clean .grad
 
-        logits = self.forward(images, self.params, label_onehot)
+        logits, grads, fcs = self.forward(self.params, x, y_onehot,
+                                          do_grad=True, training=True)
 
         # register hooks
-        backprop_grads = {}
+        real_grads = {}
         handles = {}
-        keys = []
 
-        def save_grad(name):
+        def save_grad(key):
             def hook(grad):
-                backprop_grads[name] = grad
+                real_grads[key] = grad
             return hook
 
-        for i, (fc, grad) in enumerate(zip(self.fcs, self.grads)):
-            handles[str(i)] = fc.register_hook( save_grad(str(i)) )
-            keys.append(str(i))
+        for key, fc in fcs.items():
+            handles[key] = fc.register_hook( save_grad(key) )
 
         # compute real grads
-        loss = task_loss(logits, labels)
-        loss.backward(retain_graph=True) # need 2 backwards
+        loss = task_loss(logits, y)
+        loss.backward(retain_graph=True) # need to backward again
 
         # remove hooks
-        for (k, v) in handles.items():
+        for v in handles.values():
             v.remove()
 
-        grad_loss = sum([F.mse_loss(self.grads[int(k)], backprop_grads[k].detach())
-                         for k in keys])
+        # dni loss & step
+        grad_loss = sum([F.mse_loss(grads[key], real_grads[key].detach())
+                         for key in fcs.keys()])
         grad_loss.backward()
         grad_optimizer.step()
 

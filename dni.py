@@ -22,7 +22,7 @@ class dni_linear(nn.Module):
                       )
         self.layer3 = nn.Linear(dni_hidden_size, input_dims)
 
-    def forward(self, x, y):
+    def forward(self, x, y=None):
         if self.conditioned:
             assert y is not None
             x = torch.cat((x, y), 1)
@@ -47,7 +47,7 @@ class dni_Conv2d(nn.Module):
                       nn.Conv2d(dni_input_dims, dni_hidden_size, kernel_size=5, padding=2),
                       nn.BatchNorm2d(dni_hidden_size),
                       nn.ReLU())
-        self.layer2 = nn.Sequential( 
+        self.layer2 = nn.Sequential(
                       nn.Conv2d(dni_hidden_size, dni_hidden_size, kernel_size=5, padding=2),
                       nn.BatchNorm2d(dni_hidden_size),
                       nn.ReLU())
