@@ -1,0 +1,13 @@
+ipython
+matplotlib
+jupyter
+jupyterlab
+Pillow
+numpy
+scipy
+tmuxp
+tqdm
+argparse
+ujson
+tensorboardX  
+nested_dict
