@@ -1,36 +1,61 @@
-import argparse
-from train import *
-import torch
-from dataset import *
 import os
+import argparse
+import torch
+import torch.nn.functional as F
+from model import rdbnn
+from dataset import *
 
-if __name__ == '__main__':
+# args
+parser = argparse.ArgumentParser(description='DNI')
+parser.add_argument('--dataset', choices=['mnist', 'cifar10'], default='mnist')
+parser.add_argument('--num_epochs', type=int, default=300)
+parser.add_argument('--batch_size', type=int, default=64)
+parser.add_argument('--conditioned', type=bool, default=False)
+parser.add_argument('--plot', type=bool, default=False)
+parser.add_argument('--gpu_id', type=int, default=3)
+args = parser.parse_args()
 
-    parser = argparse.ArgumentParser(description='DNI')
-    parser.add_argument('--dataset', choices=['mnist', 'cifar10'], default='mnist')
-    parser.add_argument('--num_epochs', type=int, default=300)
-    parser.add_argument('--model_type', choices=['mlp', 'cnn'], default='cnn',
-                    help='currently support mlp and cnn')
-    parser.add_argument('--batch_size', type=int, default=100)
-    parser.add_argument('--conditioned', type=bool, default=False)
-    parser.add_argument('--plot', type=bool, default=False)
-    parser.add_argument('--use_gpu', type=bool, default=True)
-    parser.add_argument('--gpu_id', type=int, default=3)
+# gpu
+os.environ['CUDA_VISIBLE_DEVICES'] = str(args.gpu_id)
+device = torch.device('cuda')
 
-    args = parser.parse_args()
+# file name
+model_name = '%s.%s_dni'%(args.dataset, args.model_type, )
+if args.conditioned:
+    model_name += '.conditioned'
+args.model_name = model_name
 
-    os.environ['CUDA_VISIBLE_DEVICES'] = str(args.gpu_id)
+# data
+if args.dataset == 'mnist':
+    data = mnist(args)
+elif args.dataset == 'cifar10':
+    data = cifar10(args)
 
-    # do not support using mlp to trian cifar
-    assert args.dataset != 'cifar10' or args.model_type != 'mlp'
+train_loader = data.train_loader
+test_loader = data.test_loader
 
-    model_name = '%s.%s_dni'%(args.dataset, args.model_type, )
-    if args.conditioned:
-        model_name += '.conditioned'
-    args.model_name = model_name
-    if args.dataset == 'mnist':
-        data = mnist(args)
-    elif args.dataset == 'cifar10':
-        data = cifar10(args)
-    m = classifier(args, data)
-    m.train_model()
+# model
+model = rdbnn(F.mse_loss, input_dim=1, input_size=28*28, device=device, do_bn=False,
+              n_hidden=256, n_classes=10, lr=3e-5, conditioned_DNI=False, n_inner=1)
+
+# main loop
+best_perf = 0.
+for epoch in range(args.num_epochs):
+    for i, (images, labels) in enumerate(self.train_loader):
+        loss, theta_loss, grad_loss = model.train_step(images, labels, beta=1e-4)
+
+        if (i+1) % 100 == 0:
+            print ('Epoch [%d/%d], Step [%d/%d], Loss: %.4f, Theta Loss: %4f, Grad Loss: %.4f'
+                    % (epoch+1, args.num_epochs, i+1, data.num_train//args.batch_size,
+                       loss, theta_loss, grad_loss))
+
+    #if (epoch+1) % 10 == 0:
+    #    perf = model.test(epoch+1)
+    #    if perf[0] > best_perf:
+    #        torch.save(model.net.state_dict(), model_name+'_model_best.pkl')
+
+## Save the Model ans Stats
+#pkl.dump(self.stats, open(self.model_name+'_stats.pkl', 'wb'))
+#torch.save(self.net.state_dict(), self.model_name+'_model.pkl')
+#if self.plot:
+#    plot(self.stats, name=self.model_name)
