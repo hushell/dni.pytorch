@@ -1,5 +1,6 @@
 import torch.nn.functional as F
-from .utils import conv_params, linear_params, bnparams, bnstats, batch_norm
+from utils import conv_params, linear_params, bnparams, bnstats, batch_norm
+import itertools
 
 
 class MNIST_MLP_DNI:
@@ -56,9 +57,9 @@ class MNIST_MLP_DNI:
                     yield w
 
     def dni_parameters(self):
-        for layer in self.dni.values():
-            for w in layer.values():
-                yield w
+        return itertools.chain(self.dni['fc1'].parameters(),
+                               self.dni['fc2'].parameters(),
+                               self.dni['fc3'].parameters())
 
     def init_theta(self, key):
         #return {k:v.detach().requires_grad_() for k,v in self.params[key].items()}

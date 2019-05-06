@@ -13,6 +13,7 @@ parser.add_argument('--batch_size', type=int, default=64)
 parser.add_argument('--conditioned', type=bool, default=False)
 parser.add_argument('--plot', type=bool, default=False)
 parser.add_argument('--gpu_id', type=int, default=3)
+parser.add_argument('--beta', type=float, default=1e-4)
 args = parser.parse_args()
 
 # gpu
@@ -20,7 +21,7 @@ os.environ['CUDA_VISIBLE_DEVICES'] = str(args.gpu_id)
 device = torch.device('cuda')
 
 # file name
-model_name = '%s.%s_dni'%(args.dataset, args.model_type, )
+model_name = '%s.beta%.4f_dni' % (args.dataset, args.beta)
 if args.conditioned:
     model_name += '.conditioned'
 args.model_name = model_name
@@ -35,22 +36,22 @@ train_loader = data.train_loader
 test_loader = data.test_loader
 
 # model
-model = rdbnn(F.mse_loss, input_dim=1, input_size=28*28, device=device, do_bn=False,
+model = rdbnn(F.nll_loss, input_dim=1, input_size=28*28, device=device, do_bn=False,
               n_hidden=256, n_classes=10, lr=3e-5, conditioned_DNI=False, n_inner=1)
 
 # main loop
 best_perf = 0.
 for epoch in range(args.num_epochs):
-    for i, (images, labels) in enumerate(self.train_loader):
-        loss, theta_loss, grad_loss = model.train_step(images, labels, beta=1e-4)
+    for i, (images, labels) in enumerate(train_loader):
+        loss, theta_loss, grad_loss = model.train_step(images, labels, beta=args.beta)
 
         if (i+1) % 100 == 0:
             print ('Epoch [%d/%d], Step [%d/%d], Loss: %.4f, Theta Loss: %4f, Grad Loss: %.4f'
                     % (epoch+1, args.num_epochs, i+1, data.num_train//args.batch_size,
                        loss, theta_loss, grad_loss))
 
-    #if (epoch+1) % 10 == 0:
-    #    perf = model.test(epoch+1)
+    if (epoch+1) % 10 == 0:
+        perf = model.test(test_loader, epoch+1, beta=args.beta)
     #    if perf[0] > best_perf:
     #        torch.save(model.net.state_dict(), model_name+'_model_best.pkl')
 

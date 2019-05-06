@@ -1,9 +1,10 @@
 import torch.nn as nn
 import torch.autograd as autograd
-import torch.nn.Parameter as Parameter
+from torch.nn import Parameter
 from dni import *
 import itertools
-from functional_networks import mnist_mlp_dni
+from functional_networks import MNIST_MLP_DNI
+import math
 
 
 class rdbnn(nn.Module):
@@ -15,7 +16,6 @@ class rdbnn(nn.Module):
         self.task_loss = task_loss
         self.input_dim = input_dim
         self.input_size = input_size
-        self.num_classes = num_classes
         self.lr = lr
         self.n_hidden = n_hidden
         self.n_classes = n_classes
@@ -24,9 +24,10 @@ class rdbnn(nn.Module):
         self.cond_dni = conditioned_DNI
 
         # functional network
-        self.net = mnist_mlp_dni(
-                input_dim=input_dim, input_size=input_size, device=device, do_bn=do_bn,
-                n_hidden=n_hidden, n_classes=n_classes, dni_class=dni_linear, conditioned_DNI)
+        self.net = MNIST_MLP_DNI(
+                input_dim=input_dim, input_size=input_size, device=device,
+                do_bn=do_bn, n_hidden=n_hidden, n_classes=n_classes,
+                dni_class=dni_linear, conditioned_DNI=conditioned_DNI)
 
         # m_psi (Gaussian) and intermediate theta
         # TODO: m to be MLP or ConvNet
@@ -44,7 +45,6 @@ class rdbnn(nn.Module):
         # optimizers
         self.theta_optimizer = torch.optim.Adam(self.net.parameters(), lr=self.lr)
         self.grad_optimizer = torch.optim.Adam(self.net.dni_parameters(), lr=self.lr)
-        #self.m_optimizer = torch.optim.Adam(itertools.chain(self.m_mu.values(), self.m_rho.values()), lr=self.lr)
         self.m_optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
 
     def refine_theta(self, key, input, y_onehot=None, beta=1.0):
@@ -83,7 +83,8 @@ class rdbnn(nn.Module):
         forward with refined theta
         '''
         # obtain refined theta and store in self.inter_theta
-        input = x
+        input = x.view(-1, self.input_dim*self.input_size)
+
         for key in self.net.params.keys():
             input = self.refine_theta(key, input, y_onehot, beta)
 
@@ -95,13 +96,13 @@ class rdbnn(nn.Module):
         c = -float(0.5 * math.log(2 * math.pi))
         std_w = (1 + self.m_rho[key]['weight'].exp()).log() # TODO: need to make std larger?
         logvar_w = std_w.pow(2).log()
-        logpdf_w = c - 0.5 * logvar_w -
+        logpdf_w = c - 0.5 * logvar_w - \
             (theta['weight'] - self.m_mu[key]['weight']).pow(2) / (2 * std_w.pow(2))
         std_b = (1 + self.m_rho[key]['bias'].exp()).log()
         logvar_b = std_b.pow(2).log()
-        logpdf_b = c - 0.5 * logvar_b -
+        logpdf_b = c - 0.5 * logvar_b - \
             (theta['bias'] - self.m_mu[key]['bias']).pow(2) / (2 * std_b.pow(2))
-        return -(logpdf_w + logpdf_b)
+        return -0.5 * (logpdf_w.mean() + logpdf_b.mean())
 
     def train_step(self, x, y, beta=1.0):
         x, y = x.to(self.device), y.to(self.device)
@@ -114,28 +115,28 @@ class rdbnn(nn.Module):
             y_onehot = None
 
         # update theta (or init_net) and m_psi
-        theta_optimizer.zero_grad()
-        m_optimizer.zero_grad()
+        self.theta_optimizer.zero_grad()
+        self.m_optimizer.zero_grad()
 
-        logits = self.forward(x, y, y_onehot, training=True, beta)
+        logits = self.forward(x, y, y_onehot, training=True, beta=beta)
 
         nll = self.task_loss(logits, y)
         kl = sum([self.neg_log_m(theta, key) for key, theta in self.inter_theta.items()])
         loss = nll + beta * kl
         loss.backward()
 
-        theta_optimizer.step()
-        m_optimizer.step()
+        self.theta_optimizer.step()
+        self.m_optimizer.step()
 
         # update dni
-        theta_optimizer.zero_grad() # clean theta.grad
-        grad_optimizer.zero_grad()
+        self.theta_optimizer.zero_grad() # clean theta.grad
+        self.grad_optimizer.zero_grad()
 
         theta_loss, grad_loss = self.net.update_dni_module(x, y, y_onehot,
                 self.task_loss, self.theta_optimizer, self.grad_optimizer)
 
         grad_loss.backward()
-        grad_optimizer.step()
+        self.grad_optimizer.step()
 
         return loss.item(), theta_loss.item(), grad_loss.item()
 
@@ -167,6 +168,6 @@ class rdbnn(nn.Module):
                 correct[1] += (predicted == y).sum().item()
 
         perf = [100 * correct[0] / total, 100 * correct[1] / total]
-        print('Epoch %d: [with refinement: %.4f] - [normal: %.4f]' % (epoch, perf[0], perf[1]))
+        print('==> Test at Epoch %d: [with refinement: %.4f] - [normal: %.4f]' % (epoch, perf[0], perf[1]))
         return perf
 
