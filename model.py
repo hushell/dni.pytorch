@@ -47,7 +47,7 @@ class rdbnn(nn.Module):
         self.grad_optimizer = torch.optim.Adam(self.net.dni_parameters(), lr=self.lr)
         self.m_optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
 
-    def refine_theta(self, key, input, y_onehot=None, beta=1.0):
+    def refine_theta(self, key, input, y_onehot=None, training=True, beta=1.0):
         '''
         The graph starts with theta = net.params[key]
         (note that '=' will also copy .grad, so zero_grad() should be called).
@@ -60,7 +60,7 @@ class rdbnn(nn.Module):
         for t in range(self.n_inner):
             # fc_i(theta)
             out, grad, _ = self.net.f_fc(key, theta, input,
-                                         y_onehot=y_onehot, do_grad=True, training=True)
+                                         y_onehot=y_onehot, do_grad=True, training=training)
 
             # -log m_psi(theta)
             loss_m = beta * self.neg_log_m(theta, key)
@@ -86,7 +86,7 @@ class rdbnn(nn.Module):
         input = x.view(-1, self.input_dim*self.input_size)
 
         for key in self.net.params.keys():
-            input = self.refine_theta(key, input, y_onehot, beta)
+            input = self.refine_theta(key, input, y_onehot, training, beta)
 
         logits = self.net.forward(self.inter_theta, x, y_onehot,
                                   do_grad=False, training=True)
@@ -94,7 +94,7 @@ class rdbnn(nn.Module):
 
     def neg_log_m(self, theta, key):
         c = -float(0.5 * math.log(2 * math.pi))
-        std_w = (1 + self.m_rho[key]['weight'].exp()).log() # TODO: need to make std larger?
+        std_w = (1 + self.m_rho[key]['weight'].exp()).log() # TODO: make std larger avoid underflow?
         logvar_w = std_w.pow(2).log()
         logpdf_w = c - 0.5 * logvar_w - \
             (theta['weight'] - self.m_mu[key]['weight']).pow(2) / (2 * std_w.pow(2))
@@ -144,7 +144,7 @@ class rdbnn(nn.Module):
         correct = [0, 0]
         total = 0
 
-        for x, y in self.test_loader:
+        for x, y in test_loader:
             x, y = x.to(self.device), y.to(self.device)
 
             # y_onehot for dni
@@ -155,7 +155,7 @@ class rdbnn(nn.Module):
                 y_onehot = None
 
             # with refined theta
-            logits_refine = self.forward(x, y, y_onehot, False, beta)
+            logits_refine = self.forward(x, y, y_onehot, training=False, beta=beta)
             _, predicted = torch.max(logits_refine, 1)
             total += y.size(0)
             correct[0] += (predicted == y).sum().item()

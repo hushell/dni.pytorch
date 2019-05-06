@@ -1,4 +1,5 @@
 import torch.nn.functional as F
+import torch.nn as nn
 from utils import conv_params, linear_params, bnparams, bnstats, batch_norm
 import itertools
 
@@ -35,17 +36,21 @@ class MNIST_MLP_DNI:
 
         def gen_dni():
             dni = {
-                'fc1': dni_class(n_hidden, n_classes, conditioned=conditioned_DNI).to(device),
-                'fc2': dni_class(n_hidden, n_classes, conditioned=conditioned_DNI).to(device),
-                'fc3': dni_class(n_classes, n_classes, conditioned=conditioned_DNI).to(device)}
-            return dni
+                'fc1': dni_class(n_hidden, n_classes,
+                                 dni_hidden_size=n_hidden, conditioned=conditioned_DNI).to(device),
+                'fc2': dni_class(n_hidden, n_classes,
+                                 dni_hidden_size=n_hidden, conditioned=conditioned_DNI).to(device),
+                'fc3': dni_class(n_classes, n_classes,
+                                 dni_hidden_size=n_hidden, conditioned=conditioned_DNI).to(device)}
+            dni_seq = nn.Sequential(dni['fc1'], dni['fc2'], dni['fc3'])
+            return dni, dni_seq
 
         # All params
         self.params, self.activations = gen_params()
         if do_bn:
             self.bn_params = gen_bn_params()
             self.bn_stats = gen_bn_stats()
-        self.dni = gen_dni()
+        self.dni, self.dni_seq = gen_dni()
 
     def parameters(self):
         for layer in self.params.values():
@@ -109,9 +114,11 @@ class MNIST_MLP_DNI:
 
     def update_dni_module(self, x, y, y_onehot,
                           task_loss, optimizer, grad_optimizer):
+        self.dni_seq.train()
+
         # forward with self.params
         logits, grads, fcs = self.forward(self.params, x, y_onehot,
-                                          do_grad=True, training=True)
+                                          do_grad=True, training=False)
 
         # register hooks
         real_grads = {}
@@ -137,5 +144,6 @@ class MNIST_MLP_DNI:
         grad_loss = sum([F.mse_loss(grads[key], real_grads[key].detach())
                          for key in fcs.keys()])
 
+        self.dni_seq.eval()
         return loss, grad_loss
 
