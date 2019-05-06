@@ -11,6 +11,8 @@ parser.add_argument('--dataset', choices=['mnist', 'cifar10'], default='mnist')
 parser.add_argument('--num_epochs', type=int, default=300)
 parser.add_argument('--batch_size', type=int, default=64)
 parser.add_argument('--conditioned', type=bool, default=False)
+parser.add_argument('--do_bn', type=bool, default=False)
+parser.add_argument('--n_hidden', type=int, default=256)
 parser.add_argument('--plot', type=bool, default=False)
 parser.add_argument('--gpu_id', type=int, default=3)
 parser.add_argument('--beta', type=float, default=1e-4)
@@ -36,8 +38,8 @@ train_loader = data.train_loader
 test_loader = data.test_loader
 
 # model
-model = rdbnn(F.nll_loss, input_dim=1, input_size=28*28, device=device, do_bn=False,
-              n_hidden=256, n_classes=10, lr=3e-5, conditioned_DNI=False, n_inner=1)
+model = rdbnn(F.nll_loss, input_dim=1, input_size=28*28, device=device, do_bn=args.do_bn,
+              n_hidden=args.n_hidden, n_classes=10, lr=3e-5, conditioned_DNI=args.conditioned, n_inner=1)
 
 # main loop
 best_perf = 0.
