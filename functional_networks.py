@@ -63,8 +63,7 @@ class MNIST_MLP_DNI:
 
     def init_theta(self, key):
         #return {k:v.detach().requires_grad_() for k,v in self.params[key].items()}
-        #return {k:v.clone() for k,v in self.params[key].items()}
-        return self.params[key]
+        return {k:v.clone() for k,v in self.params[key].items()}
 
     def f_fc(self, key, theta, input, y_onehot=None, do_grad=False, training=True):
         '''
