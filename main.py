@@ -45,7 +45,7 @@ net_arch = MLP_DNI_FCx3 if args.dataset == 'mnist' else CNN_DNI_CONVx2_FCx1
 net_args = dict(input_dim=data.in_channel, input_size=data.input_dims, device=device,
                 n_hidden=args.n_hidden, n_classes=data.num_classes,
                 conditioned_DNI=args.conditioned)
-model = rdbnn(F.nll_loss, net_arch, net_args,
+model = rdbnn(net_arch, net_args, F.nll_loss,
               do_bn=args.do_bn, lr=args.lr, n_inner=args.n_inner)
 
 # main loop

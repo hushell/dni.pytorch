@@ -138,8 +138,8 @@ class CNN_DNI_CONVx2_FCx1(FUNCTIONAL_NET):
 
         def gen_params():
             params = {
-                'conv1': conv_params(input_dim, n_hidden, k=5, device),
-                'conv2': conv_params(n_hidden, n_hidden*2, k=5, device),
+                'conv1': conv_params(input_dim, n_hidden, 5, device),
+                'conv2': conv_params(n_hidden, n_hidden*2, 5, device),
                 'fc1': linear_params(7*7*n_hidden*2, n_classes, device)}
             functions = {'conv1': F.conv2d, 'conv2': F.conv2d, 'fc1': F.linear}
             args = {'conv1': {'padding':2}, 'conv2': {'padding':2}, 'fc1': {}}

@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 import torch.autograd as autograd
 from torch.nn import Parameter
@@ -30,8 +31,8 @@ class rdbnn(nn.Module):
             self.m_rho[l] = {}
             self.inter_theta[l] = {}
             for k, w in layer.items():
-                self.m_mu[l][k] = Parameter(torch.zeros_like(w, device=device)).requires_grad_()
-                self.m_rho[l][k] = Parameter(torch.log(torch.ones_like(w, device=device).exp()-1)).requires_grad_()
+                self.m_mu[l][k] = Parameter(torch.zeros_like(w, device=self.device)).requires_grad_()
+                self.m_rho[l][k] = Parameter(torch.log(torch.ones_like(w, device=self.device).exp()-1)).requires_grad_()
                 self.register_parameter(l+'_'+k+'_mu', self.m_mu[l][k])
                 self.register_parameter(l+'_'+k+'_rho', self.m_rho[l][k])
 
