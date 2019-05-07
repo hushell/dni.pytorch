@@ -17,6 +17,7 @@ parser.add_argument('--n_inner', type=int, default=1)
 parser.add_argument('--plot', type=bool, default=False)
 parser.add_argument('--gpu_id', type=int, default=3)
 parser.add_argument('--beta', type=float, default=1e-4)
+parser.add_argument('--lr', type=float, default=3e-5)
 args = parser.parse_args()
 
 # gpu
@@ -40,7 +41,7 @@ test_loader = data.test_loader
 
 # model
 model = rdbnn(F.nll_loss, input_dim=1, input_size=28*28, device=device, do_bn=args.do_bn,
-              n_hidden=args.n_hidden, n_classes=10, lr=3e-5, conditioned_DNI=args.conditioned, n_inner=1)
+              n_hidden=args.n_hidden, n_classes=10, lr=args.lr, conditioned_DNI=args.conditioned, n_inner=args.n_inner)
 
 # main loop
 best_perf = 0.
