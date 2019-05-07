@@ -23,7 +23,7 @@ def cast(params, dtype='float', device='cpu'):
 def conv_params(ni, no, k=1, device='cpu'):
     w = torch.Tensor(no, ni, k, k).to(device).requires_grad_()
     return {'weight': kaiming_normal_(w, mode='fan_out', nonlinearity='relu'),
-            'bias': None}
+            'bias': torch.zeros(no).to(device).requires_grad_()}
 
 
 def linear_params(ni, no, device='cpu'):

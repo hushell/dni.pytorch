@@ -3,6 +3,7 @@ import argparse
 import torch
 import torch.nn.functional as F
 from model import rdbnn
+from functional_networks import MLP_DNI_FCx3, CNN_DNI_CONVx2_FCx1
 from dataset import *
 
 # args
@@ -40,8 +41,12 @@ train_loader = data.train_loader
 test_loader = data.test_loader
 
 # model
-model = rdbnn(F.nll_loss, input_dim=1, input_size=28*28, device=device, do_bn=args.do_bn,
-              n_hidden=args.n_hidden, n_classes=10, lr=args.lr, conditioned_DNI=args.conditioned, n_inner=args.n_inner)
+net_arch = MLP_DNI_FCx3 if args.dataset == 'mnist' else CNN_DNI_CONVx2_FCx1
+net_args = dict(input_dim=data.in_channel, input_size=data.input_dims, device=device,
+                n_hidden=args.n_hidden, n_classes=data.num_classes,
+                conditioned_DNI=args.conditioned)
+model = rdbnn(F.nll_loss, net_arch, net_args,
+              do_bn=args.do_bn, lr=args.lr, n_inner=args.n_inner)
 
 # main loop
 best_perf = 0.

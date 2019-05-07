@@ -54,7 +54,7 @@ class dni_Conv2d(nn.Module):
         self.layer3 = nn.Sequential(
                       nn.Conv2d(dni_hidden_size, input_dims, kernel_size=5, padding=2))
 
-    def forward(self, x, y):
+    def forward(self, x, y=None):
         if self.conditioned:
             assert y is not None
             y = self.label_emb(y)

@@ -1,33 +1,26 @@
 import torch.nn as nn
 import torch.autograd as autograd
 from torch.nn import Parameter
-from dni import *
+import torch.nn.functional as F
 import itertools
-from functional_networks import MNIST_MLP_DNI
 import math
 
 
 class rdbnn(nn.Module):
-    def __init__(self, task_loss, input_dim=1, input_size=28*28, device='cpu', do_bn=False,
-              n_hidden=400, n_classes=10, lr=3e-5, conditioned_DNI=True, n_inner=2):
+    def __init__(self, net_arch, net_args, task_loss,
+                 do_bn=False, lr=3e-5, n_inner=2):
         super(rdbnn, self).__init__()
 
         # params
         self.task_loss = task_loss
-        self.input_dim = input_dim
-        self.input_size = input_size
         self.lr = lr
-        self.n_hidden = n_hidden
-        self.n_classes = n_classes
         self.n_inner = n_inner
-        self.device = device
-        self.cond_dni = conditioned_DNI
+        self.n_classes = net_args['n_classes']
+        self.device = net_args['device']
+        self.cond_dni = net_args['conditioned_DNI']
 
         # functional network
-        self.net = MNIST_MLP_DNI(
-                input_dim=input_dim, input_size=input_size, device=device,
-                do_bn=do_bn, n_hidden=n_hidden, n_classes=n_classes,
-                dni_class=dni_linear, conditioned_DNI=conditioned_DNI)
+        self.net = net_arch(**net_args)
 
         # m_psi (Gaussian) and intermediate theta
         # TODO: m to be MLP or ConvNet
@@ -59,8 +52,8 @@ class rdbnn(nn.Module):
 
         for t in range(self.n_inner):
             # fc_i(theta)
-            out, grad, _ = self.net.f_fc(key, theta, input,
-                                         y_onehot=y_onehot, do_grad=True, training=training)
+            out, grad, _ = self.net.layer(key, theta, input,
+                                          y_onehot=y_onehot, do_grad=True, training=training)
 
             # -log m_psi(theta)
             loss_m = beta * self.neg_log_m(theta, key)
@@ -82,9 +75,9 @@ class rdbnn(nn.Module):
         '''
         forward with refined theta
         '''
-        # obtain refined theta and store in self.inter_theta
-        input = x.view(-1, self.input_dim*self.input_size)
+        input = self.net.preprocess(x)
 
+        # obtain refined theta and store in self.inter_theta
         for key in self.net.params.keys():
             input = self.refine_theta(key, input, y_onehot, training, beta)
 
@@ -132,8 +125,7 @@ class rdbnn(nn.Module):
         self.theta_optimizer.zero_grad() # clean theta.grad
         self.grad_optimizer.zero_grad()
 
-        theta_loss, grad_loss = self.net.update_dni_module(x, y, y_onehot,
-                self.task_loss, self.theta_optimizer, self.grad_optimizer)
+        theta_loss, grad_loss = self.update_dni_module(x, y, y_onehot)
 
         grad_loss.backward()
         self.grad_optimizer.step()
@@ -170,4 +162,38 @@ class rdbnn(nn.Module):
         perf = [100 * correct[0] / total, 100 * correct[1] / total]
         print('==> Test at Epoch %d: [with refinement: %.4f] - [normal: %.4f]' % (epoch, perf[0], perf[1]))
         return perf
+
+    def update_dni_module(self, x, y, y_onehot):
+        self.net.dni_seq.train()
+
+        # forward with self.net.params
+        logits, grads, fcs = self.net.forward(self.net.params, x, y_onehot,
+                                              do_grad=True, training=False)
+
+        # register hooks
+        real_grads = {}
+        handles = {}
+
+        def save_grad(key):
+            def hook(grad):
+                real_grads[key] = grad
+            return hook
+
+        for key, fc in fcs.items():
+            handles[key] = fc.register_hook( save_grad(key) )
+
+        # compute real grads
+        loss = self.task_loss(logits, y)
+        loss.backward(retain_graph=True) # need to backward again
+
+        # remove hooks
+        for v in handles.values():
+            v.remove()
+
+        # dni loss & step
+        grad_loss = sum([F.mse_loss(grads[key], real_grads[key].detach())
+                         for key in fcs.keys()])
+
+        self.net.dni_seq.eval()
+        return loss, grad_loss
 

@@ -4,7 +4,7 @@ import torchvision.transforms as transforms
 
 class mnist():
     def __init__(self, args):
-        # MNIST Dataset 
+        # MNIST Dataset
         train_dataset = dsets.MNIST(root='./data',
                             train=True,
                             transform=transforms.ToTensor(),
@@ -32,28 +32,29 @@ class cifar10():
         # CIFAR 10 Dataset
         transform = self.image_transform()
         train_dataset = dsets.CIFAR10(root='./data/',
-                               train=True, 
+                               train=True,
                                transform=transform,
                                download=True)
 
         test_dataset = dsets.CIFAR10(root='./data/',
-                              train=False, 
+                              train=False,
                               transform=transforms.ToTensor())
 
         # Data Loader (Input Pipeline)
         self.train_loader = torch.utils.data.DataLoader(dataset=train_dataset,
-                                           batch_size=100, 
+                                           batch_size=100,
                                            shuffle=True)
 
         self.test_loader = torch.utils.data.DataLoader(dataset=test_dataset,
-                                          batch_size=100, 
+                                          batch_size=100,
                                           shuffle=False)
+        self.input_dims = None
         self.num_classes = 10
         self.in_channel = 3
         self.num_train = len(train_dataset)
 
     def image_transform(self):
-        # Image Preprocessing 
+        # Image Preprocessing
         # WARNING: difference from other settings: crop to 28*28
         transform = transforms.Compose([
             transforms.Scale(40),
